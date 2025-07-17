@@ -1,12 +1,19 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import json
+import torch
 
 # =======================
 # Configuração
 # =======================
-MODEL_ID = "TucanoBR/Tucano-160m-Instruct"
-INPUT_FILE = "../data/constitucional.json"
+MODEL_ID = "TucanoBR/Tucano-160m"
+INPUT_FILE = "../data/harmful_prompts.json"
 OUTPUT_FILE = "../data/generated_responses.json"
+
+# =======================
+# Checa o device
+# =======================
+device = 0 if torch.cuda.is_available() else -1
+print(f"Device set to use: {'cuda:0' if device==0 else 'cpu'}")
 
 # =======================
 # Carregar modelo e tokenizer
@@ -18,32 +25,43 @@ generator = pipeline(
     "text-generation",
     model=model,
     tokenizer=tokenizer,
-    device=0  # Usa GPU se estiver tudo certo com CUDA
+    device=device
 )
 
 # =======================
 # Carregar prompts
 # =======================
 with open(INPUT_FILE, "r", encoding="utf-8") as f:
-    prompts = json.load(f)
+    data = json.load(f)
 
-outputs = []
+# para debug
+print("Eaw data keys:", data.keys())
+
+prompts_list = data["prompts"]
+print("Primeiro prompt:", prompts_list[0])
+
 
 # =======================
 # Gerar respostas
 # =======================
-for item in prompts:
-    prompt_text = f"<instruction>{item['principle']}</instruction>"
-    result = generator(
-        prompt_text,
-        max_new_tokens=256,
+results = generator(
+	prompts_list,
+        max_new_tokens=200,
         do_sample=True,
-        temperature=0.7
+        temperature=0.7,
+	top_k=50,
+	top_p=0.9
     )
-    outputs.append({
-        "prompt": prompt_text,
-        "response": result[0]["generated_text"]
-    })
+
+# =======================
+# Montagem de saída
+# =======================
+outputs = []
+for prompt_text, result in zip(prompts_list, results):
+	outputs.append({
+	   "prompt": prompt_text,
+	   "response": result[0]["generated_text"]
+	})
 
 # =======================
 # Salvar resultado
