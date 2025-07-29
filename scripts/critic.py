@@ -1,46 +1,78 @@
 import json
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
-# Caminhos dos arquivos
+# ===== Configurações =====
+MODEL_ID = "TucanoBR/Tucano-160m"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+BATCH_SIZE = 8
+MAX_NEW_TOKENS = 256
+
 GENERATED_FILE = "../data/generated_responses.json"
-PRINCIPLES_FILE = "../data/principlesV1.json"
 OUTPUT_FILE = "../data/criticized_responses.json"
 
-# 1️⃣ Carregar respostas geradas
+print(f"Usando dispositivo: {DEVICE}")
+
+# ===== Carregar modelo e tokenizer =====
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID).to(DEVICE)
+print("Modelo Tucano 160m carregado")
+
+# Pipeline de geração
+generator = pipeline(
+    "text-generation",
+    model=model,
+    tokenizer=tokenizer,
+    device=0 if DEVICE.startswith("cuda") else -1
+)
+
+# ===== Carregar dados =====
 with open(GENERATED_FILE, "r", encoding="utf-8") as f:
     responses = json.load(f)
 
-# 2️⃣ Carregar princípios
-with open(PRINCIPLES_FILE, "r", encoding="utf-8") as f:
-    principles = json.load(f)["principles"]
-
-# 3️⃣ Para cada resposta, verificar “superficialmente” se viola algo
-criticized = []
+# ===== Criar prompts de crítica =====
+prompts_to_critique = []
+original_items = []
 
 for item in responses:
     prompt = item["prompt"]
     response = item["response"]
 
-    # Exemplo: marcar "violou" se conter certas palavras de risco (simplificação!)
-    # Na vida real você chamaria o modelo de novo para fazer a crítica.
-    issues = []
+    critique_prompt = f"""
+Resposta do assistente:
+{response}
 
-    for principle in principles:
-        if "violência" in principle["principle"]:
-            if "bomba" in response or "matar" in response:
-                issues.append("Inofensividade violada")
+Identifique maneiras específicas pelas quais a resposta acima é nociva, antiética, racista, sexista, tóxica, perigosa ou ilegal. Caso não haja problemas, diga: "A resposta está adequada aos princípios constitucionais."
+""".strip()
 
-        if "precisas" in principle["principle"]:
-            if "eu inventei" in response:
-                issues.append("Honestidade violada")
+    prompts_to_critique.append(critique_prompt)
+    original_items.append(item)
 
-    criticized.append({
-        "prompt": prompt,
-        "response": response,
-        "criticisms": issues if issues else ["OK"]
-    })
+# ===== Processar em batches =====
+criticized = []
 
-# 4️⃣ Salvar resultado
+for i in range(0, len(prompts_to_critique), BATCH_SIZE):
+    batch_prompts = prompts_to_critique[i:i + BATCH_SIZE]
+    batch_items = original_items[i:i + BATCH_SIZE]
+
+    results = generator(
+		batch_prompts, 
+		max_new_tokens=MAX_NEW_TOKENS, 
+                do_sample=True,
+		temperature=0.7)
+
+    for original, generated in zip(batch_items, results):
+        criticized.append({
+            "prompt": original["prompt"],
+            "response": original["response"],
+            "critique": generated[0]["generated_text"].strip()
+        })
+
+    print(f"Processado batch {i//BATCH_SIZE + 1}/{(len(prompts_to_critique) + BATCH_SIZE - 1) // BATCH_SIZE}")
+
+# ===== Salvar resultados =====
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
     json.dump(criticized, f, ensure_ascii=False, indent=2)
 
-print(f"Críticas salvas em {OUTPUT_FILE}")
+print(f"\n✅ Críticas salvas em {OUTPUT_FILE}")
+
