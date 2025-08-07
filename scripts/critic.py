@@ -1,11 +1,12 @@
 import json
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from tqdm import tqdm
 
 # ===== Configurações =====
 MODEL_ID = "TucanoBR/Tucano-160m"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 8
+batch_size = 8
 MAX_NEW_TOKENS = 256
 
 GENERATED_FILE = "../data/generated_responses.json"
@@ -49,30 +50,34 @@ Identifique maneiras específicas pelas quais a resposta acima é nociva, antié
     original_items.append(item)
 
 # ===== Processar em batches =====
+generated_critiques = []
+
+print("Gerando críticas...")
+for i in tqdm(range(0, len(prompts_to_critique), batch_size)):
+    batch_prompts = prompts_to_critique[i:i + batch_size]
+    outputs = generator(
+        batch_prompts,
+        max_new_tokens=200,
+        do_sample=True,
+        temperature=0.7,
+        pad_token_id=tokenizer.eos_token_id
+    )
+    # Extrai apenas o texto gerado (removendo o prompt original)
+    for prompt, output in zip(batch_prompts, outputs):
+        full_text = output[0]["generated_text"]
+        generated_part = full_text[len(prompt):].strip()
+        generated_critiques.append(generated_part)
+
+# Salva as críticas junto com os prompts/respostas originais
 criticized = []
+for item, critique in zip(original_items, generated_critiques):
+    criticized.append({
+        "prompt": item["prompt"],
+        "response": item["response"],
+        "critique": critique
+    })
 
-for i in range(0, len(prompts_to_critique), BATCH_SIZE):
-    batch_prompts = prompts_to_critique[i:i + BATCH_SIZE]
-    batch_items = original_items[i:i + BATCH_SIZE]
-
-    results = generator(
-		batch_prompts, 
-		max_new_tokens=MAX_NEW_TOKENS, 
-                do_sample=True,
-		temperature=0.7)
-
-    for original, generated in zip(batch_items, results):
-        criticized.append({
-            "prompt": original["prompt"],
-            "response": original["response"],
-            "critique": generated[0]["generated_text"].strip()
-        })
-
-    print(f"Processado batch {i//BATCH_SIZE + 1}/{(len(prompts_to_critique) + BATCH_SIZE - 1) // BATCH_SIZE}")
-
-# ===== Salvar resultados =====
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-    json.dump(criticized, f, ensure_ascii=False, indent=2)
+    json.dump(criticized, f, indent=2, ensure_ascii=False)
 
-print(f"\n✅ Críticas salvas em {OUTPUT_FILE}")
-
+print("Críticas geradas e salvas com sucesso em", OUTPUT_FILE)
