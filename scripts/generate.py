@@ -5,9 +5,9 @@ import torch
 # =======================
 # Configuração
 # =======================
-MODEL_ID = "TucanoBR/Tucano-160m"
+MODEL_ID = "TucanoBR/Tucano-2b4-Instruct"
 INPUT_FILE = "../data/harmful_prompts.json"
-OUTPUT_FILE = "../data/generated_responses.json"
+OUTPUT_FILE = "../data/generated_responses_2b4.json"
 
 # =======================
 # Checa o device
@@ -48,7 +48,7 @@ results = generator(
 	prompts_list,
         max_new_tokens=200,
         do_sample=True,
-        temperature=0.7,
+        temperature=1,
 	top_k=50,
 	top_p=0.9
     )
