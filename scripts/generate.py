@@ -7,7 +7,7 @@ import torch
 # =======================
 MODEL_ID = "TucanoBR/Tucano-2b4-Instruct"
 INPUT_FILE = "../data/harmful_prompts.json"
-OUTPUT_FILE = "../data/generated_responses_2b4.json"
+OUTPUT_FILE = "../data/generated_responses_2b4_v2.json"
 
 # =======================
 # Checa o device

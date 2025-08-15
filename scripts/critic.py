@@ -1,83 +1,77 @@
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import json
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-from tqdm import tqdm
 
-# ===== Configurações =====
-MODEL_ID = "TucanoBR/Tucano-160m"
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-batch_size = 8
-MAX_NEW_TOKENS = 256
+# =======================
+# Configuração
+# =======================
+MODEL_ID = "TucanoBR/Tucano-2b4-Instruct"
+INPUT_FILE = "../data/responses.json"  # entrada
+OUTPUT_FILE = "../data/criticized_responses.json"  # saída
+BATCH_SIZE = 8  # ajuste conforme sua GPU/CPU
 
-GENERATED_FILE = "../data/generated_responses.json"
-OUTPUT_FILE = "../data/criticized_responses.json"
+PREFIX = (
+    "Identifique maneiras específicas pelas quais a resposta a seguir é "
+    "prejudicial, antiética, racista, sexista, tóxica, perigosa ou ilegal: "
+)
 
-print(f"Usando dispositivo: {DEVICE}")
+# =======================
+# Checa o device
+# =======================
+device = 0 if torch.cuda.is_available() else -1
+print(f"Device set to use: {'cuda:0' if device==0 else 'cpu'}")
 
-# ===== Carregar modelo e tokenizer =====
+# =======================
+# Carregar modelo e tokenizer
+# =======================
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-model = AutoModelForCausalLM.from_pretrained(MODEL_ID).to(DEVICE)
-print("Modelo Tucano 160m carregado")
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID)
 
-# Pipeline de geração
 generator = pipeline(
     "text-generation",
     model=model,
     tokenizer=tokenizer,
-    device=0 if DEVICE.startswith("cuda") else -1
+    device=device
 )
 
-# ===== Carregar dados =====
-with open(GENERATED_FILE, "r", encoding="utf-8") as f:
-    responses = json.load(f)
+# =======================
+# Carregar prompts
+# =======================
+with open(INPUT_FILE, "r", encoding="utf-8") as f:
+    data = json.load(f)
 
-# ===== Criar prompts de crítica =====
-prompts_to_critique = []
-original_items = []
+prompts_list = data["prompts"]
 
-for item in responses:
-    prompt = item["prompt"]
-    response = item["response"]
+# =======================
+# Preparar prompts
+# =======================
+prefixed_prompts = [f"{PREFIX}{p}" for p in prompts_list]
 
-    critique_prompt = f"""
-Resposta do assistente:
-{response}
-
-Identifique maneiras específicas pelas quais a resposta acima é nociva, antiética, racista, sexista, tóxica, perigosa ou ilegal. Caso não haja problemas, diga: "A resposta está adequada aos princípios constitucionais."
-""".strip()
-
-    prompts_to_critique.append(critique_prompt)
-    original_items.append(item)
-
-# ===== Processar em batches =====
-generated_critiques = []
-
-print("Gerando críticas...")
-for i in tqdm(range(0, len(prompts_to_critique), batch_size)):
-    batch_prompts = prompts_to_critique[i:i + batch_size]
-    outputs = generator(
-        batch_prompts,
+# =======================
+# Gerar respostas em batch
+# =======================
+results = []
+for i in range(0, len(prefixed_prompts), BATCH_SIZE):
+    batch = prefixed_prompts[i:i+BATCH_SIZE]
+    batch_outputs = generator(
+        batch,
         max_new_tokens=200,
         do_sample=True,
-        temperature=0.7,
-        pad_token_id=tokenizer.eos_token_id
+        temperature=1,
+        top_k=50,
+        top_p=0.9
     )
-    # Extrai apenas o texto gerado (removendo o prompt original)
-    for prompt, output in zip(batch_prompts, outputs):
-        full_text = output[0]["generated_text"]
-        generated_part = full_text[len(prompt):].strip()
-        generated_critiques.append(generated_part)
+    
+    for prompt, output in zip(batch, batch_outputs):
+        results.append({
+            "prompt": prompt,
+            "response": output[0]["generated_text"]
+        })
 
-# Salva as críticas junto com os prompts/respostas originais
-criticized = []
-for item, critique in zip(original_items, generated_critiques):
-    criticized.append({
-        "prompt": item["prompt"],
-        "response": item["response"],
-        "critique": critique
-    })
-
+# =======================
+# Salvar em JSON
+# =======================
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-    json.dump(criticized, f, indent=2, ensure_ascii=False)
+    json.dump(results, f, ensure_ascii=False, indent=2)
 
-print("Críticas geradas e salvas com sucesso em", OUTPUT_FILE)
+print(f"✅ Respostas salvas em {OUTPUT_FILE}")
