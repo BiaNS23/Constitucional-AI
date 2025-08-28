@@ -6,13 +6,13 @@ import torch
 # Configuração
 # =======================
 MODEL_ID = "TucanoBR/Tucano-2b4-Instruct"
-INPUT_FILE = "../data/harmful_prompts.json"   # prompts nocivos
-OUTPUT_FILE = "../data/criticized_question_prompts_Det.json"  # saída
-BATCH_SIZE = 8  # ajuste conforme GPU
+INPUT_FILE = "../data/responses.json"  # entrada
+OUTPUT_FILE = "../data/criticized_responses.json"  # saída
+BATCH_SIZE = 8  # ajuste para a GPU
 
 PREFIX = (
-    "Identifique maneiras as quais a pergunta a seguir é prejudicial, "
-    "antiética, racista, sexista, tóxica, perigosa ou ilegal:\n\n"
+    "Identifique maneiras específicas pelas quais a resposta a seguir é "
+    "prejudicial "
 )
 
 # =======================
@@ -35,7 +35,7 @@ generator = pipeline(
 )
 
 # =======================
-# Carregar prompts nocivos
+# Carregar prompts
 # =======================
 with open(INPUT_FILE, "r", encoding="utf-8") as f:
     data = json.load(f)
@@ -43,29 +43,29 @@ with open(INPUT_FILE, "r", encoding="utf-8") as f:
 prompts_list = data["prompts"]
 
 # =======================
-# Preparar prompts para IA
+# Preparar prompts
 # =======================
 prefixed_prompts = [f"{PREFIX}{p}" for p in prompts_list]
 
 # =======================
-# Gerar críticas em batch
+# Gerar respostas em batch
 # =======================
 results = []
 for i in range(0, len(prefixed_prompts), BATCH_SIZE):
     batch = prefixed_prompts[i:i+BATCH_SIZE]
     batch_outputs = generator(
         batch,
-        max_new_tokens=100,
-        do_sample=False,
+        max_new_tokens=200,
+        do_sample=True,
         temperature=1,
         top_k=50,
         top_p=0.9
     )
     
-    for original_prompt, prompt_with_prefix, output in zip(prompts_list[i:i+BATCH_SIZE], batch, batch_outputs):
+    for prompt, output in zip(batch, batch_outputs):
         results.append({
-            "prompt_nocivo": original_prompt,
-            "critica": output[0]["generated_text"].replace(prompt_with_prefix, "").strip()
+            "prompt": prompt,
+            "response": output[0]["generated_text"]
         })
 
 # =======================
@@ -74,4 +74,4 @@ for i in range(0, len(prefixed_prompts), BATCH_SIZE):
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
     json.dump(results, f, ensure_ascii=False, indent=2)
 
-print(f"✅ Críticas salvas em {OUTPUT_FILE}")
+print(f"✅ Respostas salvas em {OUTPUT_FILE}")
