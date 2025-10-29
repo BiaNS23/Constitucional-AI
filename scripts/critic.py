@@ -1,15 +1,34 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import json
 import torch
+import os
+import re
 
 # =======================
 # Configuração
 # =======================
 MODEL_ID = "TucanoBR/Tucano-2b4-Instruct"
-INPUT_FILE = "../data/harmful_prompts.json"
+INPUT_FILE = "../data/prompts.json"
 FEW_SHOT_FILE = "../data/few_shot_examples.json"
-OUTPUT_FILE = "../data/criticized_prompts_fewshot_post.json"
+OUTPUT_DIR = "../data"
+OUTPUT_BASENAME = "criticized_prompts_fs_pp"
 BATCH_SIZE = 8
+
+# =======================
+# Função para gerar nome automático de versão
+# =======================
+def gerar_nome_output(base_dir, base_name):
+    """Cria automaticamente o nome do arquivo com versão incremental."""
+    pattern = re.compile(rf"{re.escape(base_name)}_V(\d+)\.json$")
+    existing_files = [f for f in os.listdir(base_dir) if pattern.match(f)]
+
+    if not existing_files:
+        version = 1
+    else:
+        versions = [int(pattern.match(f).group(1)) for f in existing_files]
+        version = max(versions) + 1
+
+    return os.path.join(base_dir, f"{base_name}_V{version}.json")
 
 # =======================
 # Device
@@ -49,9 +68,8 @@ with open(INPUT_FILE, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 prompts_list = data["prompts"]
-
 # =======================
-# Função de pós-processamento
+# Pós-processamento e classificação
 # =======================
 def post_process(critica: str) -> str:
     """Aplica regras simples para reforçar classificação nociva."""
@@ -61,13 +79,20 @@ def post_process(critica: str) -> str:
             return critica + " (⚠️ Classificado como nocivo por regra)"
     return critica
 
+def classificar_critica(critica: str) -> str:
+    """Classifica a crítica como 'nocivo' ou 'não nocivo'."""
+    palavras_chave_nocivo = ["nocivo", "risco", "perigo", "prejudicial", "ilegal", "antiético", "tóxico", "violento"]
+    for palavra in palavras_chave_nocivo:
+        if palavra in critica.lower():
+            return "nocivo"
+    return "neutro"
+
 # =======================
 # Gerar críticas em batch
 # =======================
 results = []
 for i in range(0, len(prompts_list), BATCH_SIZE):
     batch = prompts_list[i:i+BATCH_SIZE]
-
     few_shot_prompts = [f"{FEW_SHOT_EXAMPLES}\nPergunta: {p}\nCrítica:" for p in batch]
 
     batch_outputs = generator(
@@ -82,15 +107,20 @@ for i in range(0, len(prompts_list), BATCH_SIZE):
     for original_prompt, input_with_examples, output in zip(batch, few_shot_prompts, batch_outputs):
         raw_response = output[0]["generated_text"].replace(input_with_examples, "").strip()
         processed_response = post_process(raw_response)
+        classificacao = classificar_critica(processed_response)
+
         results.append({
             "prompt_nocivo": original_prompt,
-            "critica": processed_response
+            "critica": processed_response,
+            "classificacao": classificacao
         })
 
 # =======================
-# Salvar resultados
+# Gerar nome de arquivo e salvar
 # =======================
+OUTPUT_FILE = gerar_nome_output(OUTPUT_DIR, OUTPUT_BASENAME)
+
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
     json.dump(results, f, ensure_ascii=False, indent=2)
 
-print(f"✅ Críticas com few-shot + pós-processamento salvas em {OUTPUT_FILE}")
+print(f"✅ Críticas salvas em nova versão: {OUTPUT_FILE}")
