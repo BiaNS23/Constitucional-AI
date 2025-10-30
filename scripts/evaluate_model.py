@@ -5,7 +5,7 @@ from datetime import datetime
 # =======================
 # Configuração
 # =======================
-CRITIC_FILE = "../data/criticized_prompts_fs_pp_V2.json"
+CRITIC_FILE = "../data/criticized_prompts_fs_pp_V4.json"
 EVAL_FILE = "../data/evaluation_set.json"
 LOG_FILE = "../data/results_history.csv"
 

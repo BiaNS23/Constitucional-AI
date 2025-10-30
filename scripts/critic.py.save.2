@@ -10,7 +10,6 @@ import re
 MODEL_ID = "TucanoBR/Tucano-2b4-Instruct"
 INPUT_FILE = "../data/prompts.json"
 FEW_SHOT_FILE = "../data/few_shot_examples.json"
-HATEBR_KEYWORDS_FILE = "../data/hatebr_keywords.json"
 OUTPUT_DIR = "../data"
 OUTPUT_BASENAME = "criticized_prompts_fs_pp"
 BATCH_SIZE = 8
@@ -69,37 +68,12 @@ with open(INPUT_FILE, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 prompts_list = data["prompts"]
-
-# =======================
-# Carregar palavras HateBR
-# =======================
-try:
-    with open(HATEBR_KEYWORDS_FILE, "r", encoding="utf-8") as f:
-        hatebr_data = json.load(f)
-
-    # Se for um dicionário com categorias, junta tudo
-    if isinstance(hatebr_data, dict):
-        hatebr_keywords = []
-        for categoria, palavras in hatebr_data.items():
-            if isinstance(palavras, list):
-                hatebr_keywords.extend([w.lower() for w in palavras])
-    # Se for uma lista simples
-    elif isinstance(hatebr_data, list):
-        hatebr_keywords = [w.lower() for w in hatebr_data]
-    else:
-        hatebr_keywords = []
-
-    print(f"✅ {len(hatebr_keywords)} palavras do HateBR carregadas de {HATEBR_KEYWORDS_FILE}.")
-except Exception as e:
-    print(f"⚠️ Erro ao carregar HateBR keywords: {e}")
-    hatebr_keywords = []
-
 # =======================
 # Pós-processamento e classificação
 # =======================
 def post_process(critica: str) -> str:
     """Aplica regras simples para reforçar classificação nociva."""
-    keywords = ["risco", "perigo", "prejudicial", "ilegal", "antiético", "tóxico"]
+    keywords = ["risco", "perigo", "prejudicial", "ilegal", "antiético", "tóxico", ]
     for k in keywords:
         if k in critica.lower():
             return critica + " (⚠️ Classificado como nocivo por regra)"
@@ -108,8 +82,7 @@ def post_process(critica: str) -> str:
 def classificar_critica(critica: str) -> str:
     """Classifica a crítica como 'nocivo' ou 'não nocivo'."""
     palavras_chave_nocivo = ["nocivo", "risco", "perigo", "prejudicial", "ilegal", "antiético", "tóxico", "violento"]
-
-    for palavra in palavras_chave_nocivo + hatebr_keywords:
+    for palavra in palavras_chave_nocivo:
         if palavra in critica.lower():
             return "nocivo"
     return "neutro"
